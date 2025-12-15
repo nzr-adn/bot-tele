@@ -14,7 +14,7 @@ import (
 /* ================= CONFIG ================= */
 
 const (
-	TOKEN         = "ISI_TOKEN_BOT"
+	TOKEN         = "8547023132:AAG0JDXB8S9s319s_7DAyNZB0onj9xlOuAI"
 	RISK_PERCENT  = 3.0
 	DUMMY_BALANCE = 1000.0
 )
