@@ -23,7 +23,106 @@ type UserState struct {
 
 var userStates = map[int64]*UserState{}
 
-const token = "8547023132:AAHCnVWDezLSSqKkW9o5LAqW2w_8J7nkXGA"
+const token = "8547023132:AAG0JDXB8S9s319s_7DAyNZB0onj9xlOuAI"
+
+func handleText(bot *tgbotapi.BotAPI, chatID int64, userID int64, text string) {
+	state, ok := userStates[userID]
+	if !ok {
+		return
+	}
+
+	if state.Step != "WAIT_PRICE" {
+		return
+	}
+
+	parts := strings.Split(text, ",")
+	if len(parts) != 2 {
+		send(bot, chatID, "❌ Format salah\nGunakan: entry,sl")
+		return
+	}
+
+	entry, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	sl, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+
+	if err1 != nil || err2 != nil {
+		send(bot, chatID, "❌ Angka tidak valid")
+		return
+	}
+
+	var stopDist float64
+	if state.Side == "LONG" {
+		stopDist = entry - sl
+	} else {
+		stopDist = sl - entry
+	}
+
+	if stopDist <= 0 {
+		send(bot, chatID, "❌ Stop Loss tidak valid untuk "+state.Side)
+		return
+	}
+
+	positionUSD := state.RiskUSD / (stopDist / entry)
+	qty := positionUSD / entry
+
+	msg := fmt.Sprintf(
+		"📐 POSITION SIZE\n\n"+
+			"Side       : %s\n"+
+			"Entry      : %.2f\n"+
+			"Stop Loss  : %.2f\n"+
+			"⚠️ Risk $  : %.2f USDT\n"+
+			"📦 Size $  : %.2f USDT\n"+
+			"📊 Qty     : %.6f\n\n"+
+			"Leverage bebas (risk tetap %.0f%%)",
+		state.Side,
+		entry,
+		sl,
+		state.RiskUSD,
+		positionUSD,
+		qty,
+		RISK_PERCENT,
+	)
+
+	send(bot, chatID, msg)
+	delete(userStates, userID)
+}
+
+func handleCallback(bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQuery) {
+	userID := cb.From.ID
+	chatID := cb.Message.Chat.ID
+
+	state, ok := userStates[userID]
+	if !ok {
+		return
+	}
+
+	switch cb.Data {
+	case "SIDE_LONG":
+		state.Side = "LONG"
+	case "SIDE_SHORT":
+		state.Side = "SHORT"
+	default:
+		return
+	}
+
+	state.Step = "WAIT_PRICE"
+
+	// Hapus inline button (UX bersih)
+	edit := tgbotapi.NewEditMessageReplyMarkup(
+		chatID,
+		cb.Message.MessageID,
+		tgbotapi.InlineKeyboardMarkup{},
+	)
+	bot.Send(edit)
+
+	// ✅ Jawab callback (hilangkan loading di Telegram)
+	callback := tgbotapi.NewCallback(cb.ID, "Dipilih: "+state.Side)
+	bot.Request(callback)
+
+	bot.Send(tgbotapi.NewMessage(
+		chatID,
+		"Masukkan Entry dan Stop Loss\n\nFormat:\nentry,sl",
+	))
+}
 
 func main() {
 	bot, err := tgbotapi.NewBotAPI(token)
@@ -41,6 +140,13 @@ func main() {
 
 	for update := range updates {
 
+		// Callback Query (Inline Button)
+		if update.CallbackQuery != nil {
+			handleCallback(bot, update.CallbackQuery)
+			continue
+		}
+
+		// Message
 		if update.Message == nil {
 			continue
 		}
@@ -94,80 +200,17 @@ func handleCalculate(bot *tgbotapi.BotAPI, chatID int64, userID int64) {
 		RiskUSD: riskUSD,
 	}
 
-	send(bot, chatID, "Pilih posisi:\n\n1️⃣ LONG\n2️⃣ SHORT\n\nKetik: long / short")
-}
+	btnLong := tgbotapi.NewInlineKeyboardButtonData("🔵 LONG", "SIDE_LONG")
+	btnShort := tgbotapi.NewInlineKeyboardButtonData("🔴 SHORT", "SIDE_SHORT")
 
-func handleText(bot *tgbotapi.BotAPI, chatID int64, userID int64, text string) {
-	state, ok := userStates[userID]
-	if !ok {
-		return
-	}
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(btnLong, btnShort),
+	)
 
-	switch state.Step {
+	msg := tgbotapi.NewMessage(chatID, "Pilih posisi:")
+	msg.ReplyMarkup = keyboard
 
-	case "WAIT_SIDE":
-		side := strings.ToUpper(strings.TrimSpace(text))
-		if side != "LONG" && side != "SHORT" {
-			send(bot, chatID, "❌ Ketik: long atau short")
-			return
-		}
-
-		state.Side = side
-		state.Step = "WAIT_PRICE"
-
-		send(bot, chatID, "Masukkan Entry dan Stop Loss\n\nFormat:\nentry,sl")
-
-	case "WAIT_PRICE":
-		parts := strings.Split(text, ",")
-		if len(parts) != 2 {
-			send(bot, chatID, "❌ Format salah\nGunakan: entry,sl")
-			return
-		}
-
-		entry, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-		sl, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-
-		if err1 != nil || err2 != nil {
-			send(bot, chatID, "❌ Angka tidak valid")
-			return
-		}
-
-		var stopDist float64
-		if state.Side == "LONG" {
-			stopDist = entry - sl
-		} else {
-			stopDist = sl - entry
-		}
-
-		if stopDist <= 0 {
-			send(bot, chatID, "❌ Stop Loss tidak valid untuk posisi "+state.Side)
-			return
-		}
-
-		positionUSD := state.RiskUSD / (stopDist / entry)
-		qty := positionUSD / entry
-
-		msg := fmt.Sprintf(
-			"📐 POSITION SIZE\n\n"+
-				"Side       : %s\n"+
-				"Entry      : %.2f\n"+
-				"Stop Loss  : %.2f\n"+
-				"⚠️ Risk $  : %.2f USDT\n"+
-				"📦 Size $  : %.2f USDT\n"+
-				"📊 Qty     : %.6f\n\n"+
-				"Leverage bebas (risk tetap %.0f%%)",
-			state.Side,
-			entry,
-			sl,
-			state.RiskUSD,
-			positionUSD,
-			qty,
-			RISK_PERCENT,
-		)
-
-		send(bot, chatID, msg)
-		delete(userStates, userID)
-	}
+	bot.Send(msg)
 }
 
 func send(bot *tgbotapi.BotAPI, chatID int64, text string) {
