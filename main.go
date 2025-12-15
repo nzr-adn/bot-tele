@@ -252,35 +252,30 @@ func handleCallback(bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQuery) {
 			send(bot, chatID, "Masukkan Amount (USDT):")
 
 		case "RESET_CONFIRM":
-			cbResp := tgbotapi.NewCallback(cb.ID, "Data dihapus")
-			bot.Request(cbResp)
+			bot.Request(tgbotapi.NewCallback(cb.ID, ""))
 
 			db.Exec("DELETE FROM trades")
 
-			edit := tgbotapi.NewEditMessageReplyMarkup(
+			edit := tgbotapi.NewEditMessageText(
 				chatID,
 				cb.Message.MessageID,
-				tgbotapi.InlineKeyboardMarkup{},
+				"🗑️ Semua data trade telah dihapus",
 			)
+			edit.ParseMode = "Markdown"
 			bot.Send(edit)
-
-			send(bot, chatID, "🗑️ Semua data trade dihapus")
 
 		case "RESET_CANCEL":
-			// 1️⃣ jawab callback (WAJIB)
-			cbResp := tgbotapi.NewCallback(cb.ID, "Reset dibatalkan")
-			bot.Request(cbResp)
+			// 1️⃣ WAJIB jawab callback
+			bot.Request(tgbotapi.NewCallback(cb.ID, ""))
 
-			// 2️⃣ hapus inline keyboard
-			edit := tgbotapi.NewEditMessageReplyMarkup(
+			// 2️⃣ EDIT pesan asal (PALING STABIL)
+			edit := tgbotapi.NewEditMessageText(
 				chatID,
 				cb.Message.MessageID,
-				tgbotapi.InlineKeyboardMarkup{},
+				"❎ Reset dibatalkan",
 			)
+			edit.ParseMode = "Markdown"
 			bot.Send(edit)
-
-			// 3️⃣ kirim pesan
-			send(bot, chatID, "❎ Reset dibatalkan")
 
 		}
 	}
