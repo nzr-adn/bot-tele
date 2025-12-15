@@ -14,7 +14,7 @@ import (
 /* ================= CONFIG ================= */
 
 const (
-	TOKEN         = "8547023132:AAG0JDXB8S9s319s_7DAyNZB0onj9xlOuAI"
+	TOKEN         = "ISI_TOKEN_BOT"
 	RISK_PERCENT  = 3.0
 	DUMMY_BALANCE = 1000.0
 )
@@ -218,7 +218,37 @@ func handleCallback(bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQuery) {
 	userID := cb.From.ID
 	chatID := cb.Message.Chat.ID
 
-	// CALCULATE
+	// ================= RESET (GLOBAL) =================
+	switch cb.Data {
+
+	case "RESET_CONFIRM":
+		bot.Request(tgbotapi.NewCallback(cb.ID, ""))
+
+		db.Exec("DELETE FROM trades")
+
+		edit := tgbotapi.NewEditMessageText(
+			chatID,
+			cb.Message.MessageID,
+			"🗑️ Semua data trade telah dihapus",
+		)
+		edit.ParseMode = "Markdown"
+		bot.Send(edit)
+		return
+
+	case "RESET_CANCEL":
+		bot.Request(tgbotapi.NewCallback(cb.ID, ""))
+
+		edit := tgbotapi.NewEditMessageText(
+			chatID,
+			cb.Message.MessageID,
+			"❎ Reset dibatalkan",
+		)
+		edit.ParseMode = "Markdown"
+		bot.Send(edit)
+		return
+	}
+
+	// ================= CALCULATE =================
 	if s, ok := calcStates[userID]; ok {
 		if cb.Data == "CALC_LONG" || cb.Data == "CALC_SHORT" {
 			s.Side = strings.TrimPrefix(cb.Data, "CALC_")
@@ -229,9 +259,10 @@ func handleCallback(bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQuery) {
 		}
 	}
 
-	// ADD TRADE
+	// ================= ADD TRADE =================
 	if s, ok := addTradeStates[userID]; ok {
 		switch cb.Data {
+
 		case "ADD_LONG", "ADD_SHORT":
 			s.Side = strings.TrimPrefix(cb.Data, "ADD_")
 			s.Step = "RESULT"
@@ -250,33 +281,6 @@ func handleCallback(bot *tgbotapi.BotAPI, cb *tgbotapi.CallbackQuery) {
 			s.Result = strings.TrimPrefix(cb.Data, "RES_")
 			s.Step = "AMOUNT"
 			send(bot, chatID, "Masukkan Amount (USDT):")
-
-		case "RESET_CONFIRM":
-			bot.Request(tgbotapi.NewCallback(cb.ID, ""))
-
-			db.Exec("DELETE FROM trades")
-
-			edit := tgbotapi.NewEditMessageText(
-				chatID,
-				cb.Message.MessageID,
-				"🗑️ Semua data trade telah dihapus",
-			)
-			edit.ParseMode = "Markdown"
-			bot.Send(edit)
-
-		case "RESET_CANCEL":
-			// 1️⃣ WAJIB jawab callback
-			bot.Request(tgbotapi.NewCallback(cb.ID, ""))
-
-			// 2️⃣ EDIT pesan asal (PALING STABIL)
-			edit := tgbotapi.NewEditMessageText(
-				chatID,
-				cb.Message.MessageID,
-				"❎ Reset dibatalkan",
-			)
-			edit.ParseMode = "Markdown"
-			bot.Send(edit)
-
 		}
 	}
 }
